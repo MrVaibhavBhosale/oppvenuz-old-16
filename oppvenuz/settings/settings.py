@@ -1,60 +1,67 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+
 from decouple import config
-import dj_database_url
-from firebase_admin import initialize_app, credentials
 
+
+
+# =====================================================
+# BASE
+# =====================================================
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = BASE_DIR
 
-# =========================
+# =====================================================
 # SECURITY
-# =========================
+# =====================================================
 SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", default=False, cast=bool)
-ALLOWED_HOSTS = ["*"]
 
-# =========================
-# APPS
-# =========================
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    ".onrender.com",
+    "api.oppvenuz.com",
+    "staging.oppvenuz.com",
+]
+
+CORS_ORIGIN_ALLOW_ALL = True
+
+
+# =====================================================
+# APPLICATIONS
+# =====================================================
 INSTALLED_APPS = [
+    # Django
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # Third-party
     "rest_framework",
     "drf_yasg",
     "django_filters",
     "corsheaders",
-    "phone_verify",
     "oauth2_provider",
     "social_django",
     "drf_social_oauth2",
     "rest_framework_social_oauth2",
-    "fcm_django",
-    "users.apps.UsersConfig",
-    "service",
-    "plan",
-    "payment",
-    "event_booking",
-    "enquiry",
-    "article",
-    "e_invites",
-    "pinterest",
-    "feedbacks",
     "django_apscheduler",
-    "documents",
-    "content_manager",
-    "seo",
+
+    # Project apps
+    "users.apps.UsersConfig",
+    "pinterest",
 ]
 
-AUTH_USER_MODEL = "users.CustomUser"
 
-# =========================
+
+# =====================================================
 # MIDDLEWARE
-# =========================
+# =====================================================
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -67,85 +74,85 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# =========================
-# DATABASE (Render)
-# =========================
+
+# --------------------------------------------------
+# DATABASE (Render PostgreSQL)
+# --------------------------------------------------
 DATABASES = {
-    "default": dj_database_url.parse(config("DATABASE_URL"))
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST"),
+        "PORT": config("DB_PORT", cast=int),
+    }
 }
 
-# =========================
-# STATIC
-# =========================
+
+# =====================================================
+# STATIC FILES
+# =====================================================
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STATICFILES_STORAGE = (
+    "whitenoise.storage.CompressedManifestStaticFilesStorage"
+)
 
-# =========================
-# FIREBASE
-# =========================
-FCM_JSON = config("FCM_JSON_SDK")
-cred = credentials.Certificate(FCM_JSON)
-FIREBASE_APP = initialize_app(cred)
 
-USER_FCM_JSON = config("USER_FCM_JSON_SDK")
-new_cred = credentials.Certificate(USER_FCM_JSON)
-FIREBASE_MESSAGING_APP = initialize_app(new_cred, name="user_app")
 
-FCM_DJANGO_SETTINGS = {
-    "DEFAULT_FIREBASE_APP": FIREBASE_APP,
-    "ONE_DEVICE_PER_USER": True,
-    "DELETE_INACTIVE_DEVICES": True,
+
+
+# =====================================================
+# REST FRAMEWORK + JWT
+# =====================================================
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.AllowAny",
+    ),
 }
 
-# =========================
-# EMAIL
-# =========================
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
-
-# =========================
-# PAYU
-# =========================
-PAYU_MERCHANT_KEY = config("PAYU_MERCHANT_KEY")
-PAYU_MERCHANT_SALT = config("PAYU_MERCHANT_SALT")
-PAYU_MODE = config("PAYU_MODE")
-
-# =========================
-# JWT
-# =========================
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(weeks=5),
-    "REFRESH_TOKEN_LIFETIME": timedelta(weeks=6),
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=45),
+    "AUTH_HEADER_TYPES": ("Bearer",),
     "ALGORITHM": "HS256",
     "SIGNING_KEY": SECRET_KEY,
-    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# =========================
-# URLS
-# =========================
+
+# =====================================================
+# URLS / WSGI
+# =====================================================
 ROOT_URLCONF = "oppvenuz.urls"
 WSGI_APPLICATION = "oppvenuz.wsgi.application"
 
-# =========================
+
+# =====================================================
 # TEMPLATES
-# =========================
+# =====================================================
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "APP_DIRS": True,
-        "OPTIONS": {"context_processors": [
-            "django.template.context_processors.debug",
-            "django.template.context_processors.request",
-            "django.contrib.auth.context_processors.auth",
-            "django.contrib.messages.context_processors.messages",
-        ]},
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
     },
 ]
 
-# =========================
-# PASSWORD VALIDATORS
-# =========================
+
+# =====================================================
+# PASSWORD VALIDATION
+# =====================================================
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -153,13 +160,26 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+
+# =====================================================
+# INTERNATIONALIZATION
+# =====================================================
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
+USE_I18N = True
 USE_TZ = True
 
-# =========================
-# LOGGING SAFE
-# =========================
+
+
+# =====================================================
+# CORS
+# =====================================================
+CORS_ALLOW_ALL_ORIGINS = True
+
+
+# =====================================================
+# LOGGING (MINIMAL – SAFE FOR PROD)
+# =====================================================
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
