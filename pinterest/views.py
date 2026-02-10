@@ -74,9 +74,19 @@ class GetBoardListAPIView(GenericAPIView):
 
     def post(self, request):
         refresh_token_object = PinterestToken.objects.first()
+
+        if not refresh_token_object:
+            return Response(
+                {
+                    "status": False,
+                    "message": "Pinterest refresh token not configured",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         access_token = get_access_token(refresh_token_object.refresh_token)
 
-        response = requests.get(
+        pinterest_response = requests.get(
             "https://api.pinterest.com/v5/boards",
             headers={
                 "Authorization": f"Bearer {access_token}",
@@ -84,13 +94,12 @@ class GetBoardListAPIView(GenericAPIView):
             },
         )
 
-        data = response.json()
+        data = pinterest_response.json()
 
         return Response(
             {
                 "status": True,
                 "data": data.get("items", []),
-                "message": messages.SUCCESS,
             },
             status=status.HTTP_200_OK,
         )
