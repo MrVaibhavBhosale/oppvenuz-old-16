@@ -210,3 +210,30 @@ class GetAllPinsAPIView(GenericAPIView):
         response.data["bookmark"] = data.get("bookmark")
 
         return response
+
+class GetPinDetailAPIView(GenericAPIView):
+    permission_classes = ()
+    authentication_classes = ()
+    serializer_class = PinterestTokenSerializer
+
+    def post(self, request):
+        pin_id = request.data.get("pin_id")
+
+        refresh_token_object = PinterestToken.objects.first()
+        access_token = get_access_token(refresh_token_object.refresh_token)
+
+        response = requests.get(
+            f"https://api.pinterest.com/v5/pins/{pin_id}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+        )
+
+        return Response(
+            {
+                "status": True,
+                "data": response.json(),
+            },
+            status=status.HTTP_200_OK,
+        )
