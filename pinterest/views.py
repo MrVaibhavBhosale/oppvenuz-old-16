@@ -10,15 +10,15 @@ from requests_oauthlib import OAuth2Session
 from rest_framework.generics import ListAPIView
 from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
+
 from utilities import constants
-from users.utils import CustomPagination
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from datetime import datetime, timedelta
 from pinterest.models import PinterestToken, PinterestAccessToken
 from pinterest.serializers import PinterestTokenSerializer
-from users.permissions import IsTokenValid
-from users.utils import ResponseInfo
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
+
 from rest_framework import status
 from rest_framework.response import Response
 from utilities import messages
@@ -26,6 +26,10 @@ from decouple import config
 
 # load_dotenv()
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 def gen_new_access_token(refresh_token):
     """
@@ -75,7 +79,10 @@ class GetBoardListAPIView(GenericAPIView):
         """
         Constructor function for formatting the web response to return.
         """
-        self.response_format = ResponseInfo().response
+        return Response({
+            "data": data.get("items"),
+            "message": "SUCCESS"
+        }, status=status.HTTP_200_OK)
         super(GetBoardListAPIView, self).__init__(**kwargs)
 
     def post(self, request):
@@ -104,7 +111,10 @@ class GetBoardPinListAPIView(GenericAPIView):
         """
         Constructor function for formatting the web response to return.
         """
-        self.response_format = ResponseInfo().response
+        return Response({
+            "data": data.get("items"),
+            "message": "SUCCESS"
+        }, status=status.HTTP_200_OK)
         super(GetBoardPinListAPIView, self).__init__(**kwargs)
 
     def post(self, request):
@@ -126,11 +136,9 @@ class GetBoardPinListAPIView(GenericAPIView):
         if ordering == "oldest":
             all_data = all_data[::-1]
 
-        paginator = PageNumberPagination()
-        paginator.page_size = 20
-
+        paginator = StandardResultsSetPagination()
         result_projects = paginator.paginate_queryset(all_data, request)
-        return CustomPagination.get_paginated_response(paginator, result_projects)
+        return paginator.get_paginated_response(result_projects)
 
 
 class GetPinDetailAPIView(GenericAPIView):
@@ -142,7 +150,10 @@ class GetPinDetailAPIView(GenericAPIView):
         """
         Constructor function for formatting the web response to return.
         """
-        self.response_format = ResponseInfo().response
+        return Response({
+            "data": data.get("items"),
+            "message": "SUCCESS" 
+        }, status=status.HTTP_200_OK)
         super(GetPinDetailAPIView, self).__init__(**kwargs)
 
     def post(self, request):
@@ -173,7 +184,10 @@ class GetAllPinsAPIView(GenericAPIView):
         """
         Constructor function for formatting the web response to return.
         """
-        self.response_format = ResponseInfo().response
+        return Response({
+            "data": data.get("items"),
+            "message": "SUCCESS"
+        }, status=status.HTTP_200_OK)
         super(GetAllPinsAPIView, self).__init__(**kwargs)
 
     def post(self, request):
@@ -202,4 +216,6 @@ class GetAllPinsAPIView(GenericAPIView):
         paginator.page_size = 20
 
         result_projects = paginator.paginate_queryset(all_data, request)
-        return CustomPagination.get_paginated_response(paginator, result_projects, bookmark=data.get('bookmark', None))
+        response = paginator.get_paginated_response(result_projects)
+        response.data["bookmark"] = data.get("bookmark", None)
+        return response
