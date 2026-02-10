@@ -53,7 +53,7 @@ INSTALLED_APPS = [
     "django_apscheduler",
 
     # Project apps
-    "users.apps.UsersConfig",
+   
     "pinterest",
 ]
 
