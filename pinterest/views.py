@@ -1,7 +1,6 @@
 import requests
 from datetime import datetime, timedelta
 
-from django.shortcuts import render
 from rest_framework.generics import GenericAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -11,7 +10,7 @@ from decouple import config
 
 from pinterest.models import PinterestToken, PinterestAccessToken
 from pinterest.serializers import PinterestTokenSerializer
-from utilities import constants, messages
+from utilities import constants
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -136,60 +135,63 @@ class GetBoardPinListAPIView(GenericAPIView):
         return paginator.get_paginated_response(result)
 
 
-class GetPinDetailAPIView(GenericAPIView):
-    permission_classes = ()
-    authentication_classes = ()
-    serializer_class = PinterestTokenSerializer
-
-    def post(self, request):
-        refresh_token_object = PinterestToken.objects.first()
-        access_token = get_access_token(refresh_token_object.refresh_token)
-
-        pin_id = request.data.get("pin_id")
-
-        response = requests.get(
-            f"https://api.pinterest.com/v5/pins/{pin_id}",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
-        )
-
-        return Response(
-            {
-                "status": True,
-                "data": response.json(),
-                "message": messages.SUCCESS,
-            },
-            status=status.HTTP_200_OK,
-        )
-
 
 class GetAllPinsAPIView(GenericAPIView):
     permission_classes = ()
     authentication_classes = ()
     serializer_class = PinterestTokenSerializer
 
+    def get(self, request):
+        return self._handle(request)
+
     def post(self, request):
+        return self._handle(request)
+
+    def _handle(self, request):
         pin_title = request.query_params.get("pin_title")
         ordering = request.query_params.get("ordering")
         page_size = request.query_params.get("page_size", 250)
-        bookmark = request.data.get("bookmark")
+
+        bookmark = request.data.get("bookmark") or request.query_params.get("bookmark")
 
         refresh_token_object = PinterestToken.objects.first()
         access_token = get_access_token(refresh_token_object.refresh_token)
 
-        response = requests.get(
+        pinterest_response = requests.get(
             constants.PINTEREST_API_URL,
-            params={"page_size": page_size, "bookmark": bookmark},
+            params={
+                "page_size": page_size,
+                "bookmark": bookmark,
+            },
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
             },
         )
 
-        data = response.json()
-        items = data.get("items", [])
+        data = pinterest_response.json()
+        raw_items = data.get("items", [])
+
+        # 🔥 NORMALIZED RESPONSE (frontend friendly)
+        items = []
+        for pin in raw_items:
+            image_url = None
+
+            media = pin.get("media", {})
+            images = media.get("images", {})
+            originals = images.get("originals") or images.get("orig")
+
+            if originals:
+                image_url = originals.get("url")
+
+            items.append({
+                "id": pin.get("id"),
+                "title": pin.get("title"),
+                "description": pin.get("description"),
+                "link": pin.get("link"),
+                "image_url": image_url,   # ✅ UI will use this
+                "created_at": pin.get("created_at"),
+            })
 
         if pin_title:
             items = [
