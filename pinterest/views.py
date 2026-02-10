@@ -1,105 +1,100 @@
-import json
-import os
+import requests
+from datetime import datetime, timedelta
 
 from django.shortcuts import render
-
-# Create your views here.
-import requests
-from oauth2_provider.contrib.rest_framework import OAuth2Authentication
-from requests_oauthlib import OAuth2Session
-from rest_framework.generics import ListAPIView
 from rest_framework.generics import GenericAPIView
-from rest_framework.permissions import IsAuthenticated
-
-from utilities import constants
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from datetime import datetime, timedelta
-from pinterest.models import PinterestToken, PinterestAccessToken
-from pinterest.serializers import PinterestTokenSerializer
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-
 from rest_framework import status
-from rest_framework.response import Response
-from utilities import messages
+
 from decouple import config
 
-# load_dotenv()
+from pinterest.models import PinterestToken, PinterestAccessToken
+from pinterest.serializers import PinterestTokenSerializer
+from utilities import constants, messages
+
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
 
+
+# ==========================
+# TOKEN HELPERS
+# ==========================
+
 def gen_new_access_token(refresh_token):
-    """
-    gen access token for pinterest
-    """
-    raw_data = {"grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "scope": "pins:read,boards:read,user_accounts:read"}
-    access_token_data = requests.post(
+    raw_data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "scope": "pins:read,boards:read,user_accounts:read",
+    }
+
+    response = requests.post(
         "https://api.pinterest.com/v5/oauth/token",
         data=raw_data,
         headers={
-            "Authorization": f"Basic {config('BASIC_TOKEN')}"},
+            "Authorization": f"Basic {config('BASIC_TOKEN')}"
+        },
     )
-    access_token = access_token_data.json().get('access_token')
-    return access_token
+
+    return response.json().get("access_token")
 
 
 def get_access_token(refresh_token):
-    """
-    check access token expire or not and return
-    """
     access_token_obj = PinterestAccessToken.objects.first()
-    today_date = datetime.now().date()
+    today = datetime.now().date()
+
+    if access_token_obj and today <= access_token_obj.expiry_date:
+        return access_token_obj.access_token
+
+    access_token = gen_new_access_token(refresh_token)
+
     if access_token_obj:
-        access_token = access_token_obj.access_token
-        token_expiry_date = access_token_obj.expiry_date
-        if today_date <= token_expiry_date:
-            return access_token
-        else:
-            access_token = gen_new_access_token(refresh_token)
-            access_token_obj.access_token = access_token
-            access_token_obj.expiry_date = today_date + timedelta(days=20)
-            access_token_obj.save()
+        access_token_obj.access_token = access_token
+        access_token_obj.expiry_date = today + timedelta(days=20)
+        access_token_obj.save()
     else:
-        access_token = gen_new_access_token(refresh_token)
-        PinterestAccessToken.objects.create(access_token=access_token, expiry_date=today_date + timedelta(days=20))
+        PinterestAccessToken.objects.create(
+            access_token=access_token,
+            expiry_date=today + timedelta(days=20),
+        )
+
     return access_token
 
+
+# ==========================
+# APIs
+# ==========================
 
 class GetBoardListAPIView(GenericAPIView):
     permission_classes = ()
     authentication_classes = ()
     serializer_class = PinterestTokenSerializer
 
-    def __init__(self, **kwargs):
-        """
-        Constructor function for formatting the web response to return.
-        """
-        return Response({
-            "data": data.get("items"),
-            "message": "SUCCESS"
-        }, status=status.HTTP_200_OK)
-        super(GetBoardListAPIView, self).__init__(**kwargs)
-
     def post(self, request):
         refresh_token_object = PinterestToken.objects.first()
         access_token = get_access_token(refresh_token_object.refresh_token)
-        all_boards = requests.get(
+
+        response = requests.get(
             "https://api.pinterest.com/v5/boards",
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"},
+                "Content-Type": "application/json",
+            },
         )
-        data = all_boards.json()
-        self.response_format["data"] = data.get('items')
-        self.response_format["status_code"] = status.HTTP_201_CREATED
-        self.response_format["error"] = None
-        self.response_format["message"] = messages.SUCCESS
-        return Response(self.response_format)
+
+        data = response.json()
+
+        return Response(
+            {
+                "status": True,
+                "data": data.get("items", []),
+                "message": messages.SUCCESS,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class GetBoardPinListAPIView(GenericAPIView):
@@ -107,38 +102,38 @@ class GetBoardPinListAPIView(GenericAPIView):
     authentication_classes = ()
     serializer_class = PinterestTokenSerializer
 
-    def __init__(self, **kwargs):
-        """
-        Constructor function for formatting the web response to return.
-        """
-        return Response({
-            "data": data.get("items"),
-            "message": "SUCCESS"
-        }, status=status.HTTP_200_OK)
-        super(GetBoardPinListAPIView, self).__init__(**kwargs)
-
     def post(self, request):
-        pin_title = self.request.query_params.get('pin_title', None)
-        ordering = self.request.query_params.get('ordering', None)
+        pin_title = request.query_params.get("pin_title")
+        ordering = request.query_params.get("ordering")
+
         refresh_token_object = PinterestToken.objects.first()
         access_token = get_access_token(refresh_token_object.refresh_token)
-        board_id = request.data.get('board_id')
-        all_boards = requests.get(
+
+        board_id = request.data.get("board_id")
+
+        response = requests.get(
             f"https://api.pinterest.com/v5/boards/{board_id}/pins",
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"},
+                "Content-Type": "application/json",
+            },
         )
-        data = all_boards.json()
-        all_data = data.get('items')
+
+        data = response.json()
+        items = data.get("items", [])
+
         if pin_title:
-            all_data = [data for data in all_data if pin_title.lower() in data['title'].lower()]
+            items = [
+                i for i in items
+                if pin_title.lower() in (i.get("title") or "").lower()
+            ]
+
         if ordering == "oldest":
-            all_data = all_data[::-1]
+            items = items[::-1]
 
         paginator = StandardResultsSetPagination()
-        result_projects = paginator.paginate_queryset(all_data, request)
-        return paginator.get_paginated_response(result_projects)
+        result = paginator.paginate_queryset(items, request)
+        return paginator.get_paginated_response(result)
 
 
 class GetPinDetailAPIView(GenericAPIView):
@@ -146,76 +141,70 @@ class GetPinDetailAPIView(GenericAPIView):
     authentication_classes = ()
     serializer_class = PinterestTokenSerializer
 
-    def __init__(self, **kwargs):
-        """
-        Constructor function for formatting the web response to return.
-        """
-        return Response({
-            "data": data.get("items"),
-            "message": "SUCCESS" 
-        }, status=status.HTTP_200_OK)
-        super(GetPinDetailAPIView, self).__init__(**kwargs)
-
     def post(self, request):
         refresh_token_object = PinterestToken.objects.first()
         access_token = get_access_token(refresh_token_object.refresh_token)
-        pin_id = request.data.get('pin_id')
-        all_boards = requests.get(
+
+        pin_id = request.data.get("pin_id")
+
+        response = requests.get(
             f"https://api.pinterest.com/v5/pins/{pin_id}",
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"},
+                "Content-Type": "application/json",
+            },
         )
-        data = all_boards.json()
-        self.response_format["data"] = data
-        self.response_format["status_code"] = status.HTTP_201_CREATED
-        self.response_format["error"] = None
-        self.response_format["message"] = messages.SUCCESS
-        return Response(self.response_format)
+
+        return Response(
+            {
+                "status": True,
+                "data": response.json(),
+                "message": messages.SUCCESS,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class GetAllPinsAPIView(GenericAPIView):
     permission_classes = ()
     authentication_classes = ()
     serializer_class = PinterestTokenSerializer
-    pagination_class = [PageNumberPagination,]
-
-    def __init__(self, **kwargs):
-        """
-        Constructor function for formatting the web response to return.
-        """
-        return Response({
-            "data": data.get("items"),
-            "message": "SUCCESS"
-        }, status=status.HTTP_200_OK)
-        super(GetAllPinsAPIView, self).__init__(**kwargs)
 
     def post(self, request):
-        pin_title = self.request.query_params.get('pin_title', None)
-        ordering = self.request.query_params.get('ordering', None)
-        page_size = self.request.query_params.get('page_size', 250)
-        bookmark = request.data.get('bookmark', None)
+        pin_title = request.query_params.get("pin_title")
+        ordering = request.query_params.get("ordering")
+        page_size = request.query_params.get("page_size", 250)
+        bookmark = request.data.get("bookmark")
+
         refresh_token_object = PinterestToken.objects.first()
         access_token = get_access_token(refresh_token_object.refresh_token)
-        all_boards = requests.get(
+
+        response = requests.get(
             constants.PINTEREST_API_URL,
-            params=dict(page_size=page_size, bookmark=bookmark),
+            params={"page_size": page_size, "bookmark": bookmark},
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"},
+                "Content-Type": "application/json",
+            },
         )
-        data = all_boards.json()
-        all_data = data.get('items')
+
+        data = response.json()
+        items = data.get("items", [])
 
         if pin_title:
-            all_data = [data for data in all_data if pin_title.lower() in data['title'].lower()]
+            items = [
+                i for i in items
+                if pin_title.lower() in (i.get("title") or "").lower()
+            ]
+
         if ordering == "oldest":
-            all_data = all_data[::-1]
+            items = items[::-1]
 
         paginator = PageNumberPagination()
         paginator.page_size = 20
 
-        result_projects = paginator.paginate_queryset(all_data, request)
-        response = paginator.get_paginated_response(result_projects)
-        response.data["bookmark"] = data.get("bookmark", None)
+        result = paginator.paginate_queryset(items, request)
+        response = paginator.get_paginated_response(result)
+        response.data["bookmark"] = data.get("bookmark")
+
         return response
